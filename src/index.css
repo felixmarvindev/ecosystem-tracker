@@ -1,0 +1,116 @@
+@import "mapbox-gl/dist/mapbox-gl.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Kenya Restoration Tracker — Earth-tone design system. All colors HSL. */
+
+@layer base {
+  :root {
+    --background: 40 20% 97%;
+    --foreground: 150 30% 10%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 150 30% 10%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 150 30% 10%;
+
+    --primary: 130 40% 30%;
+    --primary-foreground: 60 30% 96%;
+
+    --secondary: 40 30% 92%;
+    --secondary-foreground: 150 30% 15%;
+
+    --muted: 40 15% 93%;
+    --muted-foreground: 150 10% 45%;
+
+    --accent: 35 80% 50%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 40 20% 88%;
+    --input: 40 20% 88%;
+    --ring: 130 40% 30%;
+
+    --radius: 0.5rem;
+
+    /* Restoration type colors */
+    --mangrove: 130 55% 28%;
+    --forest: 130 40% 30%;
+    --dryland: 30 90% 48%;
+    --mountain: 85 45% 35%;
+    --protected: 130 35% 50%;
+
+    /* Map-specific */
+    --panel-width: 400px;
+    --header-height: 72px;
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    --background: 150 20% 7%;
+    --foreground: 40 20% 95%;
+
+    --card: 150 15% 12%;
+    --card-foreground: 40 20% 95%;
+
+    --popover: 150 15% 12%;
+    --popover-foreground: 40 20% 95%;
+
+    --primary: 130 45% 45%;
+    --primary-foreground: 150 30% 5%;
+
+    --secondary: 150 15% 18%;
+    --secondary-foreground: 40 20% 95%;
+
+    --muted: 150 10% 18%;
+    --muted-foreground: 40 10% 60%;
+
+    --accent: 35 80% 50%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 150 10% 20%;
+    --input: 150 10% 20%;
+    --ring: 130 45% 45%;
+
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Mapbox overrides */
+.mapboxgl-ctrl-group {
+  border-radius: var(--radius) !important;
+  box-shadow: 0 2px 8px hsl(0 0% 0% / 0.12) !important;
+}

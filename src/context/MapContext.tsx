@@ -4,9 +4,11 @@ import {
   useState,
   useMemo,
   useCallback,
+  useEffect,
   ReactNode,
 } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 import { fetchSites, refreshSites } from "@/services/api.service";
 import type { Site, MapState, RestorationType } from "@/types";
 
@@ -20,15 +22,33 @@ interface MapContextType extends MapState {
   refresh: () => void;
   zoomToSiteId: string | null;
   setZoomToSiteId: (id: string | null) => void;
+  searchQuery: string;
+  setSearchQuery: (query: string) => void;
 }
 
 const MapContext = createContext<MapContextType | undefined>(undefined);
 
 export function MapProvider({ children }: { children: ReactNode }) {
-  const [selectedSiteId, setSelectedSiteIdRaw] = useState<string | null>(null);
-  const [showSatellite, setShowSatelliteRaw] = useState(false);
-  const [filterType, setFilterTypeRaw] = useState<RestorationType | "ALL">("ALL");
-  const [zoomToSiteId, setZoomToSiteIdRaw] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const paramSiteId = searchParams.get("site");
+  const paramShowSatellite = searchParams.get("sat") === "1";
+  const paramFilterType = searchParams.get("type");
+  const paramSearchQuery = searchParams.get("q") ?? "";
+  const validFilterType =
+    paramFilterType === "MANGROVE" ||
+    paramFilterType === "FOREST" ||
+    paramFilterType === "DRYLAND" ||
+    paramFilterType === "MOUNTAIN_FOREST" ||
+    paramFilterType === "PROTECTED_AREA"
+      ? paramFilterType
+      : "ALL";
+
+  const [selectedSiteId, setSelectedSiteIdRaw] = useState<string | null>(paramSiteId);
+  const [showSatellite, setShowSatelliteRaw] = useState(paramShowSatellite);
+  const [filterType, setFilterTypeRaw] = useState<RestorationType | "ALL">(validFilterType);
+  const [zoomToSiteId, setZoomToSiteIdRaw] = useState<string | null>(paramSiteId);
+  const [searchQuery, setSearchQueryRaw] = useState(paramSearchQuery);
 
   // Fetch sites using React Query with caching + retry
   const {
@@ -90,11 +110,66 @@ export function MapProvider({ children }: { children: ReactNode }) {
     (id: string | null) => setZoomToSiteIdRaw(id),
     [],
   );
+  const setSearchQuery = useCallback(
+    (query: string) => setSearchQueryRaw(query),
+    [],
+  );
 
   const refresh = useCallback(() => {
     // Clear service-layer cache, then re-fetch via React Query
     refreshSites().then(() => refetch());
   }, [refetch]);
+
+  // Keep local state synchronized when URL query params change
+  useEffect(() => {
+    if (showSatellite !== paramShowSatellite) {
+      setShowSatelliteRaw(paramShowSatellite);
+    }
+
+    if (filterType !== validFilterType) {
+      setFilterTypeRaw(validFilterType);
+    }
+
+    if (searchQuery !== paramSearchQuery) {
+      setSearchQueryRaw(paramSearchQuery);
+    }
+
+    if ((paramSiteId ?? null) !== selectedSiteId) {
+      setSelectedSiteIdRaw(paramSiteId ?? null);
+      // Re-trigger zoom whenever URL site changes
+      setZoomToSiteIdRaw(paramSiteId ?? null);
+    }
+  }, [
+    paramShowSatellite,
+    validFilterType,
+    paramSearchQuery,
+    paramSiteId,
+    showSatellite,
+    filterType,
+    searchQuery,
+    selectedSiteId,
+  ]);
+
+  // Keep view state URL-shareable (satellite/filter/search/selected site)
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams);
+
+    if (showSatellite) next.set("sat", "1");
+    else next.delete("sat");
+
+    if (filterType !== "ALL") next.set("type", filterType);
+    else next.delete("type");
+
+    if (selectedSiteId) next.set("site", selectedSiteId);
+    else next.delete("site");
+
+    if (searchQuery.trim()) next.set("q", searchQuery.trim());
+    else next.delete("q");
+
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [showSatellite, filterType, selectedSiteId, searchQuery, searchParams, setSearchParams]);
 
   return (
     <MapContext.Provider
@@ -114,6 +189,8 @@ export function MapProvider({ children }: { children: ReactNode }) {
         refresh,
         zoomToSiteId,
         setZoomToSiteId,
+        searchQuery,
+        setSearchQuery,
       }}
     >
       {children}

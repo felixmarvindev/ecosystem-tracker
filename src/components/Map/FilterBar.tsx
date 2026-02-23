@@ -24,7 +24,7 @@ export function FilterBar() {
   const { filterType, setFilterType } = useMap();
 
   return (
-    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex gap-1 rounded-lg bg-card/90 backdrop-blur p-1 shadow-lg border">
+    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex gap-1 rounded-lg bg-card/90 backdrop-blur p-1 shadow-lg border max-w-[calc(100%-1rem)] overflow-x-auto">
       {TYPES.map((t) => (
         <button
           key={t}

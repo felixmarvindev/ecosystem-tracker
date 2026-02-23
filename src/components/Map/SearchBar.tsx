@@ -4,8 +4,13 @@ import { useMap } from "@/context/MapContext";
 import { restorationLabel } from "@/utils/formatters";
 
 export function SearchBar() {
-  const { sites, setSelectedSiteId, setZoomToSiteId } = useMap();
-  const [query, setQuery] = useState("");
+  const {
+    sites,
+    setSelectedSiteId,
+    setZoomToSiteId,
+    searchQuery,
+    setSearchQuery,
+  } = useMap();
   const [open, setOpen] = useState(false);
   const [highlightIdx, setHighlightIdx] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -13,14 +18,14 @@ export function SearchBar() {
 
   // Filter sites by name or county
   const results = useMemo(() => {
-    if (!query.trim()) return [];
-    const q = query.toLowerCase();
+    if (!searchQuery.trim()) return [];
+    const q = searchQuery.toLowerCase();
     return sites.filter(
       (s) =>
         s.properties.name.toLowerCase().includes(q) ||
         (s.properties.county ?? "").toLowerCase().includes(q),
     );
-  }, [sites, query]);
+  }, [sites, searchQuery]);
 
   // Reset highlight when results change
   useEffect(() => {
@@ -46,7 +51,7 @@ export function SearchBar() {
   function selectSite(siteId: string) {
     setSelectedSiteId(siteId);
     setZoomToSiteId(siteId);
-    setQuery("");
+    setSearchQuery("");
     setOpen(false);
     inputRef.current?.blur();
   }
@@ -70,7 +75,7 @@ export function SearchBar() {
   }
 
   return (
-    <div className="absolute top-3 right-4 z-10 w-72 sm:w-80">
+    <div className="absolute top-3 right-2 sm:right-4 z-10 w-[calc(100%-1rem)] sm:w-80 max-w-sm">
       {/* Input */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -78,19 +83,19 @@ export function SearchBar() {
           ref={inputRef}
           type="text"
           placeholder="Search sites…"
-          value={query}
+          value={searchQuery}
           onChange={(e) => {
-            setQuery(e.target.value);
+            setSearchQuery(e.target.value);
             setOpen(true);
           }}
-          onFocus={() => query.trim() && setOpen(true)}
+          onFocus={() => searchQuery.trim() && setOpen(true)}
           onKeyDown={handleKeyDown}
           className="w-full rounded-lg bg-card/95 backdrop-blur border shadow-md pl-9 pr-8 py-2.5 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:ring-2 focus:ring-primary/40 transition"
         />
-        {query && (
+        {searchQuery && (
           <button
             onClick={() => {
-              setQuery("");
+              setSearchQuery("");
               setOpen(false);
             }}
             className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
@@ -101,7 +106,7 @@ export function SearchBar() {
       </div>
 
       {/* Dropdown */}
-      {open && query.trim() && (
+      {open && searchQuery.trim() && (
         <div
           ref={listRef}
           className="mt-1 rounded-lg bg-card border shadow-lg max-h-64 overflow-y-auto"

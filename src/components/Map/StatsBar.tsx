@@ -12,7 +12,7 @@ export function StatsBar() {
   ];
 
   return (
-    <div className="absolute top-3 left-14 z-10 flex gap-2">
+    <div className="absolute top-3 left-2 sm:left-14 z-10 flex gap-2 max-w-[calc(100%-1rem)] overflow-x-auto">
       {stats.map((s) => (
         <div
           key={s.label}

@@ -357,7 +357,7 @@ export function MapView() {
 
     // Clear the zoom request so it can be triggered again
     setZoomToSiteId(null);
-  }, [zoomToSiteId, setZoomToSiteId]);
+  }, [zoomToSiteId, setZoomToSiteId, filteredSites]);
 
   // ----------------------------------------------------------------
   // Selected-site highlight

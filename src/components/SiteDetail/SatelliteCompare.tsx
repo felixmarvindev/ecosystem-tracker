@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import mapboxgl from "mapbox-gl";
 import * as turf from "@turf/turf";
+import { Download } from "lucide-react";
 import {
   isSentinelConfigured,
   fetchSentinelImage,
@@ -47,6 +48,7 @@ export function SatelliteCompare({ site, className = "" }: SatelliteCompareProps
   const [sliderPos, setSliderPos] = useState(0.5);
   const [loadingBefore, setLoadingBefore] = useState(false);
   const [loadingAfter, setLoadingAfter] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [sentinelReady, setSentinelReady] = useState<{
     before: boolean;
     after: boolean;
@@ -54,6 +56,9 @@ export function SatelliteCompare({ site, className = "" }: SatelliteCompareProps
 
   const hasSentinel = isSentinelConfigured();
   const color = TYPE_COLORS[site.properties.restorationType] ?? "#757575";
+  const startYear = site.properties.year;
+  const currentYear = new Date().getFullYear();
+  const afterYear = new Date().getMonth() >= 3 ? currentYear : currentYear - 1;
   const bbox = turf.bbox(turf.polygon(site.geometry.coordinates));
   const bounds: mapboxgl.LngLatBoundsLike = [
     [bbox[0], bbox[1]],
@@ -141,6 +146,7 @@ export function SatelliteCompare({ site, className = "" }: SatelliteCompareProps
       fitBoundsOptions: { padding: 50 },
       attributionControl: false,
       interactive: true,
+      preserveDrawingBuffer: true,
     });
     beforeMap.addControl(
       new mapboxgl.NavigationControl({ showCompass: false }),
@@ -171,6 +177,7 @@ export function SatelliteCompare({ site, className = "" }: SatelliteCompareProps
       fitBoundsOptions: { padding: 50 },
       attributionControl: false,
       interactive: true,
+      preserveDrawingBuffer: true,
     });
     afterMap.addControl(
       new mapboxgl.NavigationControl({ showCompass: false }),
@@ -233,9 +240,6 @@ export function SatelliteCompare({ site, className = "" }: SatelliteCompareProps
       bbox[3],
     ];
 
-    const startYear = site.properties.year;
-    const currentYear = new Date().getFullYear();
-
     // Before image: the start year
     const fetchBefore = async () => {
       setLoadingBefore(true);
@@ -259,7 +263,6 @@ export function SatelliteCompare({ site, className = "" }: SatelliteCompareProps
     };
 
     // After image: current year (or last year if early in the year)
-    const afterYear = new Date().getMonth() >= 3 ? currentYear : currentYear - 1;
     const fetchAfter = async () => {
       setLoadingAfter(true);
       const url = await fetchSentinelImage(
@@ -314,12 +317,88 @@ export function SatelliteCompare({ site, className = "" }: SatelliteCompareProps
     isDragging.current = false;
   }, []);
 
+  const downloadComparisonImage = useCallback(async () => {
+    const beforeMap = beforeMapRef.current;
+    const afterMap = afterMapRef.current;
+    if (!beforeMap || !afterMap) return;
+
+    setExporting(true);
+    try {
+      const beforeCanvas = beforeMap.getCanvas();
+      const afterCanvas = afterMap.getCanvas();
+      const width = beforeCanvas.width;
+      const height = beforeCanvas.height;
+      const divider = Math.max(3, Math.round(width * 0.006));
+      const labelBarHeight = 44;
+
+      const outCanvas = document.createElement("canvas");
+      outCanvas.width = width * 2 + divider;
+      outCanvas.height = height + labelBarHeight;
+      const ctx = outCanvas.getContext("2d");
+      if (!ctx) return;
+
+      // Background
+      ctx.fillStyle = "#0F172A";
+      ctx.fillRect(0, 0, outCanvas.width, outCanvas.height);
+
+      // Labels bar
+      ctx.fillStyle = "#111827";
+      ctx.fillRect(0, 0, outCanvas.width, labelBarHeight);
+      ctx.fillStyle = "#FFFFFF";
+      ctx.font = "600 18px Inter, system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(`Before · ${startYear}`, width / 2, labelBarHeight / 2);
+      ctx.fillText(`After · ${afterYear}`, width + divider + width / 2, labelBarHeight / 2);
+
+      // Side-by-side maps (full before + full after)
+      ctx.drawImage(beforeCanvas, 0, 0, width, height, 0, labelBarHeight, width, height);
+      ctx.drawImage(
+        afterCanvas,
+        0,
+        0,
+        width,
+        height,
+        width + divider,
+        labelBarHeight,
+        width,
+        height,
+      );
+
+      // Vertical divider between before/after
+      ctx.beginPath();
+      ctx.moveTo(width + divider / 2, 0);
+      ctx.lineTo(width + divider / 2, outCanvas.height);
+      ctx.lineWidth = divider;
+      ctx.strokeStyle = "#E5E7EB";
+      ctx.stroke();
+
+      const blob = await new Promise<Blob | null>((resolve) =>
+        outCanvas.toBlob((b) => resolve(b), "image/png"),
+      );
+      if (!blob) return;
+
+      const slug = site.properties.name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+      const filename = `${slug || "site"}-before-after-${startYear}-${afterYear}.png`;
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } finally {
+      setExporting(false);
+    }
+  }, [sliderPos, site.properties.name, startYear, afterYear]);
+
   const pct = `${(sliderPos * 100).toFixed(2)}%`;
   const isLoading = loadingBefore || loadingAfter;
-
-  const startYear = site.properties.year;
-  const currentYear = new Date().getFullYear();
-  const afterYear = new Date().getMonth() >= 3 ? currentYear : currentYear - 1;
 
   return (
     <div
@@ -381,6 +460,16 @@ export function SatelliteCompare({ site, className = "" }: SatelliteCompareProps
           ? `Sentinel-2 · ${startYear}`
           : `Before · ${startYear}`}
       </div>
+      <button
+        type="button"
+        onClick={downloadComparisonImage}
+        disabled={isLoading || exporting}
+        className="absolute top-3 left-1/2 -translate-x-1/2 z-10 bg-card/95 border shadow-sm text-foreground text-xs font-medium px-3 py-1.5 rounded-full flex items-center gap-1.5 hover:bg-card disabled:opacity-50 disabled:cursor-not-allowed"
+        title="Download before/after image"
+      >
+        <Download className="w-3.5 h-3.5" />
+        {exporting ? "Exporting..." : "Download Image"}
+      </button>
       <div className="absolute top-3 right-3 z-10 bg-primary/90 text-primary-foreground text-xs font-semibold px-3 py-1.5 rounded-full backdrop-blur-sm pointer-events-none">
         {hasSentinel && sentinelReady.after
           ? `Sentinel-2 · ${afterYear}`

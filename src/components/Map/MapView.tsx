@@ -2,6 +2,10 @@ import { useEffect, useRef, useCallback } from "react";
 import mapboxgl from "mapbox-gl";
 import * as turf from "@turf/turf";
 import { useMap } from "@/context/MapContext";
+import {
+  fetchSentinelImage,
+  isSentinelConfigured,
+} from "@/services/sentinel.service";
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN as string;
 
@@ -20,6 +24,33 @@ const TYPE_COLORS: Record<string, string> = {
 
 const STYLE_OUTDOORS = "mapbox://styles/mapbox/outdoors-v12";
 const STYLE_SATELLITE = "mapbox://styles/mapbox/satellite-streets-v12";
+const NDVI_SOURCE_ID = "phase2-ndvi";
+const NDVI_LAYER_ID = "phase2-ndvi-layer";
+const KENYA_BBOX: [number, number, number, number] = [33.9, -5.0, 41.9, 4.6];
+
+function clampBboxToKenya(
+  bbox: [number, number, number, number],
+): [number, number, number, number] {
+  const west = Math.max(KENYA_BBOX[0], Math.min(KENYA_BBOX[2], bbox[0]));
+  const south = Math.max(KENYA_BBOX[1], Math.min(KENYA_BBOX[3], bbox[1]));
+  const east = Math.max(KENYA_BBOX[0], Math.min(KENYA_BBOX[2], bbox[2]));
+  const north = Math.max(KENYA_BBOX[1], Math.min(KENYA_BBOX[3], bbox[3]));
+
+  if (east <= west || north <= south) return KENYA_BBOX;
+  return [west, south, east, north];
+}
+
+function recommendedSentinelSize(
+  bbox: [number, number, number, number],
+): number {
+  const [west, south, east, north] = bbox;
+  const centerLatRad = (((south + north) / 2) * Math.PI) / 180;
+  const widthMeters = Math.abs(east - west) * 111_320 * Math.cos(centerLatRad);
+  const heightMeters = Math.abs(north - south) * 110_540;
+  // Keep <= 1500m/px for Sentinel-2 and cap to sane client payload.
+  const minPixels = Math.ceil(Math.max(widthMeters, heightMeters) / 1_500);
+  return Math.max(512, Math.min(2048, minPixels));
+}
 
 export function MapView() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -30,6 +61,9 @@ export function MapView() {
     filteredSites,
     selectedSiteId,
     showSatellite,
+    imageryLayer,
+    layerOpacity,
+    ndviMonth,
     setSelectedSiteId,
     zoomToSiteId,
     setZoomToSiteId,
@@ -44,6 +78,15 @@ export function MapView() {
 
   const setSelectedSiteIdRef = useRef(setSelectedSiteId);
   setSelectedSiteIdRef.current = setSelectedSiteId;
+
+  const imageryLayerRef = useRef(imageryLayer);
+  imageryLayerRef.current = imageryLayer;
+
+  const layerOpacityRef = useRef(layerOpacity);
+  layerOpacityRef.current = layerOpacity;
+
+  const ndviMonthRef = useRef(ndviMonth);
+  ndviMonthRef.current = ndviMonth;
 
   // ----------------------------------------------------------------
   // Build centroid GeoJSON from current sites
@@ -99,6 +142,7 @@ export function MapView() {
       data: { type: "FeatureCollection", features },
     });
 
+    const opacityScale = Math.max(0, Math.min(1, layerOpacityRef.current / 100));
     map.addLayer({
       id: "sites-fill",
       type: "fill",
@@ -117,8 +161,8 @@ export function MapView() {
         "fill-opacity": [
           "case",
           ["boolean", ["feature-state", "hover"], false],
-          0.75,
-          0.55,
+          Math.min(0.9, 0.35 + opacityScale * 0.55),
+          Math.min(0.75, 0.2 + opacityScale * 0.45),
         ],
       },
     });
@@ -223,6 +267,94 @@ export function MapView() {
     }
   }, [buildCentroids]);
 
+  const applyNdviOverlay = useCallback(async () => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+
+    if (map.getLayer(NDVI_LAYER_ID)) map.removeLayer(NDVI_LAYER_ID);
+    if (map.getSource(NDVI_SOURCE_ID)) map.removeSource(NDVI_SOURCE_ID);
+
+    if (imageryLayerRef.current !== "NDVI") return;
+
+    const [year, month] = ndviMonthRef.current.split("-").map(Number);
+    const from = `${year}-${String(month).padStart(2, "0")}-01`;
+    const toDate = new Date(year, month, 0);
+    const to = `${year}-${String(month).padStart(2, "0")}-${String(toDate.getDate()).padStart(2, "0")}`;
+
+    const bounds = map.getBounds();
+    const bounded = clampBboxToKenya([
+      bounds.getWest(),
+      bounds.getSouth(),
+      bounds.getEast(),
+      bounds.getNorth(),
+    ]);
+    const [west, south, east, north] = bounded;
+    const bbox: [number, number, number, number] = [west, south, east, north];
+
+    const opacity = Math.max(0, Math.min(1, layerOpacityRef.current / 100));
+
+    if (isSentinelConfigured()) {
+      const size = recommendedSentinelSize(bbox);
+      const url = await fetchSentinelImage(bbox, from, to, size, "NDVI");
+      if (!url || !mapRef.current || !mapRef.current.isStyleLoaded()) return;
+
+      const imageCoordinates: [[number, number], [number, number], [number, number], [number, number]] = [
+        [west, north],
+        [east, north],
+        [east, south],
+        [west, south],
+      ];
+
+      mapRef.current.addSource(NDVI_SOURCE_ID, {
+        type: "image",
+        url,
+        coordinates: imageCoordinates,
+      });
+      mapRef.current.addLayer({
+        id: NDVI_LAYER_ID,
+        type: "raster",
+        source: NDVI_SOURCE_ID,
+        paint: {
+          "raster-opacity": opacity,
+          "raster-resampling": "linear",
+        },
+      }, mapRef.current.getLayer("sites-fill") ? "sites-fill" : undefined);
+      return;
+    }
+
+    // Fallback if Sentinel credentials are unavailable: tint current viewport.
+    const viewportPolygon = {
+      type: "FeatureCollection" as const,
+      features: [
+        {
+          type: "Feature" as const,
+          properties: {},
+          geometry: {
+            type: "Polygon" as const,
+            coordinates: [[
+              [west, south],
+              [east, south],
+              [east, north],
+              [west, north],
+              [west, south],
+            ]],
+          },
+        },
+      ],
+    };
+
+    map.addSource(NDVI_SOURCE_ID, { type: "geojson", data: viewportPolygon });
+    map.addLayer({
+      id: NDVI_LAYER_ID,
+      type: "fill",
+      source: NDVI_SOURCE_ID,
+      paint: {
+        "fill-color": "#4CAF50",
+        "fill-opacity": Math.min(0.35, opacity * 0.35),
+      },
+    }, map.getLayer("sites-fill") ? "sites-fill" : undefined);
+  }, []);
+
   // ----------------------------------------------------------------
   // Initialise the map (runs once per mount)
   // ----------------------------------------------------------------
@@ -231,7 +363,10 @@ export function MapView() {
 
     mapboxgl.accessToken = MAPBOX_TOKEN;
 
-    const initialStyle = showSatellite ? STYLE_SATELLITE : STYLE_OUTDOORS;
+    const initialStyle =
+      imageryLayer === "RGB"
+        ? (showSatellite ? STYLE_SATELLITE : STYLE_OUTDOORS)
+        : (imageryLayer === "LAND_COVER" ? STYLE_OUTDOORS : STYLE_SATELLITE);
 
     const map = new mapboxgl.Map({
       container: containerRef.current,
@@ -245,6 +380,7 @@ export function MapView() {
     // Persistent style.load handler
     map.on("style.load", () => {
       addSiteLayers();
+      void applyNdviOverlay();
     });
 
     // ---- Interaction handlers ----
@@ -304,6 +440,7 @@ export function MapView() {
       mapRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ----------------------------------------------------------------
@@ -316,8 +453,12 @@ export function MapView() {
     }
     const map = mapRef.current;
     if (!map) return;
-    map.setStyle(showSatellite ? STYLE_SATELLITE : STYLE_OUTDOORS);
-  }, [showSatellite]);
+    const nextStyle =
+      imageryLayer === "RGB"
+        ? (showSatellite ? STYLE_SATELLITE : STYLE_OUTDOORS)
+        : (imageryLayer === "LAND_COVER" ? STYLE_OUTDOORS : STYLE_SATELLITE);
+    map.setStyle(nextStyle);
+  }, [showSatellite, imageryLayer]);
 
   // ----------------------------------------------------------------
   // Update GeoJSON data when filtered sites change
@@ -336,6 +477,43 @@ export function MapView() {
       addSiteLayers();
     }
   }, [filteredSites, addSiteLayers, buildCentroids]);
+
+  // Keep fill opacity synced with the layer opacity slider.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.getLayer("sites-fill")) return;
+
+    const opacityScale = Math.max(0, Math.min(1, layerOpacity / 100));
+    map.setPaintProperty("sites-fill", "fill-opacity", [
+      "case",
+      ["boolean", ["feature-state", "hover"], false],
+      Math.min(0.9, 0.35 + opacityScale * 0.55),
+      Math.min(0.75, 0.2 + opacityScale * 0.45),
+    ]);
+  }, [layerOpacity]);
+
+  // NDVI overlay updates on layer/month/opacity and viewport movement.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const onMoveEnd = () => {
+      void applyNdviOverlay();
+    };
+    map.on("moveend", onMoveEnd);
+
+    if (map.isStyleLoaded()) {
+      void applyNdviOverlay();
+    } else {
+      map.once("style.load", () => {
+        void applyNdviOverlay();
+      });
+    }
+
+    return () => {
+      map.off("moveend", onMoveEnd);
+    };
+  }, [imageryLayer, ndviMonth, layerOpacity, applyNdviOverlay]);
 
   // ----------------------------------------------------------------
   // Zoom to site (triggered by search bar or programmatic)

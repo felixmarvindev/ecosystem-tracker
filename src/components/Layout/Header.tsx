@@ -24,7 +24,7 @@ interface SavedView {
 const SAVED_VIEWS_KEY = "saved-map-views-v1";
 
 export function Header() {
-  const { showSatellite, setShowSatellite } = useMap();
+  const { showSatellite, setShowSatellite, imageryLayer, setImageryLayer } = useMap();
   const [savedViewsOpen, setSavedViewsOpen] = useState(false);
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
 
@@ -169,8 +169,13 @@ export function Header() {
         <Button
           variant={showSatellite ? "default" : "outline"}
           size="sm"
-          onClick={() => setShowSatellite(!showSatellite)}
+          onClick={() => {
+            // Keep the legacy quick toggle as a base-map control.
+            if (imageryLayer !== "RGB") setImageryLayer("RGB");
+            setShowSatellite(!showSatellite);
+          }}
           className="gap-2"
+          title={imageryLayer !== "RGB" ? "Switches to RGB base map and toggles satellite" : "Toggle base map"}
         >
           {showSatellite ? (
             <Satellite className="w-4 h-4" />

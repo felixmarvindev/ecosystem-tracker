@@ -41,4 +41,7 @@ export interface MapState {
   error: string | null;
   showSatellite: boolean;
   filterType: RestorationType | "ALL";
+  imageryLayer: "RGB" | "NDVI" | "LAND_COVER";
+  layerOpacity: number; // 0-100
+  ndviMonth: string; // YYYY-MM
 }

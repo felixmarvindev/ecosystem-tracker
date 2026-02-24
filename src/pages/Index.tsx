@@ -5,6 +5,7 @@ import { MapView } from "@/components/Map/MapView";
 import { StatsBar } from "@/components/Map/StatsBar";
 import { FilterBar } from "@/components/Map/FilterBar";
 import { SearchBar } from "@/components/Map/SearchBar";
+import { GeospatialControls } from "@/components/Map/GeospatialControls";
 import { SitePanel } from "@/components/SiteDetails/SitePanel";
 
 function Dashboard() {
@@ -19,6 +20,7 @@ function Dashboard() {
         <MapView />
         <StatsBar />
         <SearchBar />
+        <GeospatialControls />
         <FilterBar />
         <SitePanel />
       </main>
